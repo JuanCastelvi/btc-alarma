@@ -5,18 +5,15 @@ import requests, time
 from datetime import datetime, timezone
 
 # ─── PARÁMETROS ───────────────────────────────────────────────────
-DROP_MIN_PCT      = 3.0
-DROP_DUR_MIN_H    = 2.0
-TOLERANCE_PCT     = 0.8
-RECOV_MIN_PCT     = 2.0
-CHECK_INTERVAL_S  = 60
+DROP_MIN_PCT     = 3.0
+DROP_DUR_MIN_H   = 2.0
+TOLERANCE_PCT    = 0.8
+CHECK_INTERVAL_S = 60
+COOLDOWN_S       = 4 * 3600
 # ──────────────────────────────────────────────────────────────────
 
 DROP_DUR_MIN_BARS = max(1, int(DROP_DUR_MIN_H * 4))
-SYMBOL   = "BTCUSDT"
-INTERVAL = "15m"
 last_alert_ts = 0
-COOLDOWN_S = 4 * 3600
 
 def send_telegram(msg):
     try:
@@ -25,20 +22,34 @@ def send_telegram(msg):
     except Exception as e:
         print(f"Error Telegram: {e}")
 
-def get_candles(limit=100):
+def get_candles():
+    # Kucoin — API pública sin restricciones geográficas
     try:
-        url = f"https://api.bybit.com/v5/market/kline?category=spot&symbol={SYMBOL}&interval=15&limit={limit}"
+        url = "https://api.kucoin.com/api/v1/market/candles?type=15min&symbol=BTC-USDT&limit=80"
         r = requests.get(url, timeout=15)
         data = r.json()
-        if data.get("retCode") == 0:
-            # Bybit devuelve las velas en orden inverso, las damos vuelta
-            raw = data["result"]["list"]
-            raw.reverse()
-            # Convertimos al formato [time, open, high, low, close, volume]
-            candles = [[int(c[0]), c[1], c[2], c[3], c[4], c[5]] for c in raw]
+        if data.get("code") == "200000":
+            raw = data["data"]
+            raw.reverse()  # KuCoin devuelve más reciente primero
+            # formato: [time, open, close, high, low, volume, turnover]
+            candles = [[int(c[0])*1000, c[1], c[3], c[4], c[2], c[5]] for c in raw]
             return candles
     except Exception as e:
-        print(f"Error Bybit: {e}")
+        print(f"Error KuCoin: {e}")
+
+    # Fallback: Kraken
+    try:
+        url = "https://api.kraken.com/0/public/OHLC?pair=XBTUSD&interval=15"
+        r = requests.get(url, timeout=15)
+        data = r.json()
+        if not data.get("error"):
+            raw = data["result"]["XXBTZUSD"]
+            # formato: [time, open, high, low, close, vwap, volume, count]
+            candles = [[c[0]*1000, c[1], c[2], c[3], c[4], c[6]] for c in raw[-80:]]
+            return candles
+    except Exception as e:
+        print(f"Error Kraken: {e}")
+
     return None
 
 def detect_sustained_drop(candles):
@@ -105,14 +116,14 @@ def log(msg):
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
 
 # ─── MAIN ─────────────────────────────────────────────────────────
-log("🤖 Bot de alarma BTC iniciado v2")
-send_telegram("✅ <b>Bot BTC iniciado</b>\nMonitoreando caídas sostenidas en BTC/USDT 15m...")
+log("🤖 Bot de alarma BTC iniciado v3")
+send_telegram("✅ <b>Bot BTC v3 iniciado</b>\nMonitoreando caídas sostenidas en BTC/USDT 15m...")
 
 while True:
     try:
-        candles = get_candles(limit=80)
+        candles = get_candles()
         if candles is None:
-            log("⚠ No se pudieron obtener velas, reintentando...")
+            log("⚠ Sin datos, reintentando en 60s...")
             time.sleep(CHECK_INTERVAL_S)
             continue
 
@@ -124,13 +135,13 @@ while True:
             if now_ts - last_alert_ts > COOLDOWN_S:
                 send_telegram(fmt_alert(info))
                 last_alert_ts = now_ts
-                log("✅ Alerta enviada a Telegram")
+                log("✅ Alerta enviada")
             else:
                 log("⏳ En cooldown")
         else:
             log(f"OK — sin patrón. Precio: ${float(candles[-1][4]):,.0f}")
 
     except Exception as e:
-        log(f"❌ Error general: {e}")
+        log(f"❌ Error: {e}")
 
     time.sleep(CHECK_INTERVAL_S)
