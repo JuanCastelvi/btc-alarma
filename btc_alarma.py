@@ -26,20 +26,19 @@ def send_telegram(msg):
         print(f"Error Telegram: {e}")
 
 def get_candles(limit=100):
-    urls = [
-        f"https://api.binance.com/api/v3/klines?symbol={SYMBOL}&interval={INTERVAL}&limit={limit}",
-        f"https://api1.binance.com/api/v3/klines?symbol={SYMBOL}&interval={INTERVAL}&limit={limit}",
-        f"https://api2.binance.com/api/v3/klines?symbol={SYMBOL}&interval={INTERVAL}&limit={limit}",
-    ]
-    for url in urls:
-        try:
-            r = requests.get(url, timeout=15)
-            data = r.json()
-            if isinstance(data, list) and len(data) > 0:
-                return data
-        except Exception as e:
-            print(f"Error fetch {url}: {e}")
-            continue
+    try:
+        url = f"https://api.bybit.com/v5/market/kline?category=spot&symbol={SYMBOL}&interval=15&limit={limit}"
+        r = requests.get(url, timeout=15)
+        data = r.json()
+        if data.get("retCode") == 0:
+            # Bybit devuelve las velas en orden inverso, las damos vuelta
+            raw = data["result"]["list"]
+            raw.reverse()
+            # Convertimos al formato [time, open, high, low, close, volume]
+            candles = [[int(c[0]), c[1], c[2], c[3], c[4], c[5]] for c in raw]
+            return candles
+    except Exception as e:
+        print(f"Error Bybit: {e}")
     return None
 
 def detect_sustained_drop(candles):
