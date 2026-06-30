@@ -1,6 +1,6 @@
 import os
-TELEGRAM_TOKEN = os.environ["8803309738:AAGzqP5YrMkZhyLYeSPaE1yyVk8MTVHQKH8"]
-TELEGRAM_CHAT_ID = os.environ["8728510954"]
+TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
+TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 import requests, time
 from datetime import datetime, timezone
